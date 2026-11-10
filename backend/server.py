@@ -167,7 +167,52 @@ class LabApiHandler(http.server.BaseHTTPRequestHandler):
             self._send_json(200, {"roll_no": roll, "count": len(reports), "reports": reports})
             return
 
+        # 6. STATIC FLUTTER WEB APP SERVING
+        web_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "build", "web")
+        if not path.startswith("/api/"):
+            file_rel = "index.html" if path in ("", "/") else path.lstrip("/")
+            file_path = os.path.normpath(os.path.join(web_dir, file_rel))
+            try:
+                if os.path.commonpath([web_dir, file_path]) == web_dir and os.path.isfile(file_path):
+                    self._serve_file(file_path)
+                    return
+                elif os.path.isfile(os.path.join(web_dir, "index.html")):
+                    self._serve_file(os.path.join(web_dir, "index.html"))
+                    return
+            except Exception:
+                pass
+
         self._send_json(404, {"error": "Not Found", "path": path})
+
+    def _serve_file(self, file_path):
+        import mimetypes
+        mimetypes.init()
+        ctype, _ = mimetypes.guess_type(file_path)
+        if not ctype:
+            if file_path.endswith(".wasm"):
+                ctype = "application/wasm"
+            elif file_path.endswith(".js"):
+                ctype = "application/javascript"
+            elif file_path.endswith(".json"):
+                ctype = "application/json"
+            else:
+                ctype = "application/octet-stream"
+
+        try:
+            with open(file_path, "rb") as f:
+                content = f.read()
+            self.send_response(200)
+            self._send_cors_headers()
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(content)))
+            if "index.html" in file_path:
+                self.send_header("Cache-Control", "no-cache, no-store, must-revalidate")
+            else:
+                self.send_header("Cache-Control", "public, max-age=3600")
+            self.end_headers()
+            self.wfile.write(content)
+        except Exception as e:
+            self._send_json(500, {"error": f"Failed reading file: {e}"})
 
     def do_POST(self):
         path = self.path.split("?")[0]
