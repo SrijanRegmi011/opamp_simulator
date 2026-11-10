@@ -327,7 +327,7 @@ class LabApiHandler(http.server.BaseHTTPRequestHandler):
             })
             return
 
-        # 4. SAVE LAB REPORT
+        # 4. SAVE & APPEND LAB REPORT
         if path == "/api/reports":
             roll = (body.get("student_roll_no") or "ECE-2026-042").strip()
             title = body.get("title", "Study of Basic Properties of Operational Amplifier")
@@ -335,18 +335,77 @@ class LabApiHandler(http.server.BaseHTTPRequestHandler):
             readings = body.get("readings", [])
             circuit_status = body.get("circuit_status", "Verified & Complete")
             conclusion = body.get("conclusion", "Completed.")
+            pre_score = body.get("pretest_score")
+            post_score = body.get("posttest_score")
 
             conn = get_db_connection()
+            report_id = None
+            submission_num = 1
+            appended_readings = 0
             if conn:
                 with conn.cursor() as cur:
-                    cur.execute("INSERT INTO students (roll_no, name) VALUES (%s, 'Student') ON CONFLICT DO NOTHING;", (roll,))
+                    # 1. Sync student profile
+                    name = student_meta.get("name", "Student")
+                    branch = student_meta.get("branch", "ECE")
+                    college = student_meta.get("college", "Virtual Institute of Technology")
+                    batch = student_meta.get("batch", "Batch A1")
                     cur.execute("""
-                        INSERT INTO lab_reports (student_roll_no, experiment_id, report_title, student_metadata, readings_summary, circuit_status, conclusion)
-                        VALUES (%s, 'OPAMP-01', %s, %s, %s, %s, %s);
-                    """, (roll, title, json.dumps(student_meta), json.dumps(readings), circuit_status, conclusion))
+                        INSERT INTO students (roll_no, name, branch, college, batch)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (roll_no) DO UPDATE
+                        SET name = EXCLUDED.name, branch = EXCLUDED.branch, college = EXCLUDED.college, batch = EXCLUDED.batch, updated_at = CURRENT_TIMESTAMP;
+                    """, (roll, name, branch, college, batch))
+
+                    # 2. Count existing reports for student to append submission count
+                    cur.execute("SELECT count(*) FROM lab_reports WHERE student_roll_no = %s;", (roll,))
+                    existing_count = cur.fetchone()[0]
+                    submission_num = existing_count + 1
+                    full_title = f"{title} (Report #{submission_num})"
+
+                    # 3. Append to lab_reports
+                    quiz_meta = {"pretest": pre_score, "posttest": post_score}
+                    cur.execute("""
+                        INSERT INTO lab_reports (student_roll_no, experiment_id, report_title, experiment_date, student_metadata, readings_summary, quiz_summary, circuit_status, conclusion)
+                        VALUES (%s, 'OPAMP-01', %s, CURRENT_DATE, %s, %s, %s, %s, %s)
+                        RETURNING id;
+                    """, (roll, full_title, json.dumps(student_meta), json.dumps(readings), json.dumps(quiz_meta), circuit_status, conclusion))
+                    row = cur.fetchone()
+                    if row:
+                        report_id = row[0]
+
+                    # 4. Append all readings to experiment_readings for persistent observation table
+                    cur.execute("SELECT COALESCE(MAX(serial_no), 0) FROM experiment_readings WHERE student_roll_no = %s;", (roll,))
+                    base_serial = cur.fetchone()[0]
+
+                    for idx, r in enumerate(readings, start=1):
+                        cur.execute("""
+                            INSERT INTO experiment_readings (student_roll_no, experiment_id, serial_no, mode, r1_ohm, rf_ohm, vin_volts,
+                                                            expected_vout, measured_vout, theoretical_gain, error_percent, is_saturated)
+                            VALUES (%s, 'OPAMP-01', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s);
+                        """, (
+                            roll,
+                            base_serial + idx,
+                            r.get("mode", "inverting"),
+                            float(r.get("r1", r.get("r1_ohm", 2000.0))),
+                            float(r.get("rf", r.get("rf_ohm", 20000.0))),
+                            float(r.get("vin", r.get("vin_volts", 1.0))),
+                            float(r.get("expectedVout", r.get("expected_vout", 0.0))),
+                            float(r.get("measuredVout", r.get("measured_vout", 0.0))),
+                            float(r.get("theoreticalGain", r.get("theoretical_gain", -10.0))),
+                            float(r.get("errorPercent", r.get("error_percent", 0.0))),
+                            bool(r.get("isSaturated", r.get("is_saturated", False)))
+                        ))
+                        appended_readings += 1
+
                 conn.close()
 
-            self._send_json(201, {"message": "Formal lab report archived to PostgreSQL", "roll_no": roll})
+            self._send_json(201, {
+                "message": f"Lab Report #{submission_num} successfully appended to PostgreSQL",
+                "roll_no": roll,
+                "report_id": report_id,
+                "submission_number": submission_num,
+                "readings_appended": appended_readings
+            })
             return
 
         self._send_json(404, {"error": "Not Found", "path": path})

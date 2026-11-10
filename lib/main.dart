@@ -2050,7 +2050,7 @@ class _LabReportGeneratorViewState extends State<LabReportGeneratorView> {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(success ? 'Lab Report successfully saved to PostgreSQL database!' : 'Report saved locally (PostgreSQL backend offline).'),
+          content: Text(success ? 'Lab Report successfully saved & appended to PostgreSQL database! (All readings & profile recorded)' : 'Report saved locally (PostgreSQL backend offline).'),
           backgroundColor: success ? const Color(0xFF15803D) : const Color(0xFF1E40AF),
         ),
       );
@@ -2632,37 +2632,20 @@ class _SimulationViewState extends State<SimulationView> {
                 icon: const Icon(Icons.add_chart, size: 15),
                 label: const Text('Add to table'),
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF15803D), foregroundColor: Colors.white, elevation: 0),
-                onPressed: () async {
+                onPressed: () {
                   if (!ctrl.isCircuitConnected) {
                     ctrl.autoWireCircuit();
                   }
                   ctrl.addReadingToTable();
                   if (ctrl.readings.isNotEmpty) {
                     final r = ctrl.readings.last;
-                    final ok = await PostgresApiService().saveReading(
-                      studentRollNo: ctrl.reportData.rollNo,
-                      serialNo: r.serialNo,
-                      mode: ctrl.mode.name,
-                      r1: r.r1,
-                      rf: r.rf,
-                      vin: r.vin,
-                      expectedVout: r.expectedVout,
-                      measuredVout: r.measuredVout,
-                      theoreticalGain: ctrl.theoreticalGain,
-                      errorPercent: r.errorPercent,
-                      isSaturated: r.isSaturated,
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Reading #${r.serialNo} added to Observation Table (${r.vin}V -> ${r.measuredVout.toStringAsFixed(2)}V). Will be permanently stored in PostgreSQL when you Save Report.'),
+                        backgroundColor: const Color(0xFF15803D),
+                        duration: const Duration(seconds: 2),
+                      ),
                     );
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(ok
-                              ? 'Reading #${r.serialNo} saved to PostgreSQL! (Vin: ${r.vin}V, Vo: ${r.measuredVout.toStringAsFixed(2)}V)'
-                              : 'Saved locally (PostgreSQL backend offline)'),
-                          backgroundColor: ok ? const Color(0xFF15803D) : const Color(0xFF1E40AF),
-                          duration: const Duration(seconds: 2),
-                        ),
-                      );
-                    }
                   }
                 },
               ),
@@ -3181,10 +3164,35 @@ class _LabPortalShellState extends State<LabPortalShell> {
                     controller: urlCtrl,
                     decoration: const InputDecoration(
                       labelText: 'Dart + PostgreSQL REST API URL',
-                      helperText: 'e.g., http://10.0.2.2:8080 (Emulator) or http://localhost:8080',
+                      helperText: 'Mobile on Wi-Fi: http://192.168.0.100:8080 | PC: http://localhost:8080',
                       border: OutlineInputBorder(),
                       isDense: true,
                     ),
+                  ),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 4,
+                    children: [
+                      ActionChip(
+                        avatar: const Icon(Icons.wifi, size: 14),
+                        label: const Text('Set PC Wi-Fi IP (192.168.0.100)', style: TextStyle(fontSize: 11)),
+                        onPressed: () {
+                          setDialogState(() {
+                            urlCtrl.text = 'http://192.168.0.100:8080';
+                          });
+                        },
+                      ),
+                      ActionChip(
+                        avatar: const Icon(Icons.computer, size: 14),
+                        label: const Text('Set Localhost (8080)', style: TextStyle(fontSize: 11)),
+                        onPressed: () {
+                          setDialogState(() {
+                            urlCtrl.text = 'http://localhost:8080';
+                          });
+                        },
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 16),
                   Container(

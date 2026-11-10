@@ -15,8 +15,9 @@ class PostgresApiService {
   PostgresApiService._internal();
 
   /// Default API base URL:
-  /// - Web / Desktop / Localhost: http://localhost:8080
-  String _baseUrl = 'http://localhost:8080';
+  /// - Web / Chrome on PC: http://localhost:8080
+  /// - Mobile / Android Phone on Wi-Fi: http://192.168.0.100:8080
+  String _baseUrl = kIsWeb ? 'http://localhost:8080' : 'http://192.168.0.100:8080';
 
   String get baseUrl => _baseUrl;
   void setBaseUrl(String url) {
