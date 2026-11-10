@@ -1,11 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 
 /// =============================================================================
 /// POSTGRESQL & BACKEND API CLIENT SERVICE FOR OP-AMP VIRTUAL LAB
-/// Connects Flutter mobile client to Dart + PostgreSQL backend server.
+/// Connects Flutter mobile client and Web client to PostgreSQL backend server.
+/// Uses universal package:http for cross-platform compatibility (Web + Mobile).
 /// =============================================================================
 
 class PostgresApiService {
@@ -14,9 +15,8 @@ class PostgresApiService {
   PostgresApiService._internal();
 
   /// Default API base URL:
-  /// - Android Emulator: http://10.0.2.2:8080
   /// - Web / Desktop / Localhost: http://localhost:8080
-  String _baseUrl = !kIsWeb && Platform.isAndroid ? 'http://10.0.2.2:8080' : 'http://localhost:8080';
+  String _baseUrl = 'http://localhost:8080';
 
   String get baseUrl => _baseUrl;
   void setBaseUrl(String url) {
@@ -30,12 +30,8 @@ class PostgresApiService {
   Future<bool> checkHealth() async {
     try {
       final uri = Uri.parse('$_baseUrl/api/health');
-      final client = HttpClient();
-      client.connectionTimeout = const Duration(seconds: 3);
-      final req = await client.getUrl(uri);
-      final res = await req.close();
-      _isOnline = res.statusCode == HttpStatus.ok;
-      client.close();
+      final res = await http.get(uri).timeout(const Duration(seconds: 3));
+      _isOnline = res.statusCode == 200;
       return _isOnline;
     } catch (_) {
       _isOnline = false;
@@ -60,7 +56,7 @@ class PostgresApiService {
         'college': college,
         'batch': batch,
       });
-      return res['statusCode'] == HttpStatus.ok;
+      return res['statusCode'] == 200;
     } catch (e) {
       debugPrint('[PostgresApiService] syncStudent error: $e');
       return false;
@@ -96,7 +92,7 @@ class PostgresApiService {
         'error_percent': errorPercent,
         'is_saturated': isSaturated,
       });
-      return res['statusCode'] == HttpStatus.created || res['statusCode'] == HttpStatus.ok;
+      return res['statusCode'] == 200 || res['statusCode'] == 201;
     } catch (e) {
       debugPrint('[PostgresApiService] saveReading error: $e');
       return false;
@@ -108,7 +104,7 @@ class PostgresApiService {
     try {
       final uri = Uri.parse('$_baseUrl/api/readings/${Uri.encodeComponent(rollNo)}');
       final res = await _getJson(uri);
-      if (res['statusCode'] == HttpStatus.ok && res['data']['readings'] != null) {
+      if (res['statusCode'] == 200 && res['data']['readings'] != null) {
         return List<Map<String, dynamic>>.from(res['data']['readings']);
       }
       return [];
@@ -141,7 +137,7 @@ class PostgresApiService {
         'circuit_status': circuitStatus,
         'conclusion': conclusion,
       });
-      return res['statusCode'] == HttpStatus.created || res['statusCode'] == HttpStatus.ok;
+      return res['statusCode'] == 200 || res['statusCode'] == 201;
     } catch (e) {
       debugPrint('[PostgresApiService] submitLabReport error: $e');
       return false;
@@ -161,7 +157,7 @@ class PostgresApiService {
         'quiz_type': quizType,
         'answers': answers.map((k, v) => MapEntry(k.toString(), v)),
       });
-      if (res['statusCode'] == HttpStatus.ok) {
+      if (res['statusCode'] == 200) {
         return res['data'] as Map<String, dynamic>;
       }
       return null;
@@ -173,19 +169,16 @@ class PostgresApiService {
 
   // Helper HTTP POST
   Future<Map<String, dynamic>> _postJson(Uri uri, Map<String, dynamic> payload) async {
-    final client = HttpClient();
-    client.connectionTimeout = const Duration(seconds: 4);
-    final req = await client.postUrl(uri);
-    req.headers.set('Content-Type', 'application/json; charset=utf-8');
-    req.write(jsonEncode(payload));
-    final res = await req.close();
-    final bodyStr = await utf8.decoder.bind(res).join();
-    client.close();
+    final res = await http.post(
+      uri,
+      headers: {'Content-Type': 'application/json; charset=utf-8'},
+      body: jsonEncode(payload),
+    ).timeout(const Duration(seconds: 4));
 
     Map<String, dynamic> parsed = {};
-    if (bodyStr.isNotEmpty) {
+    if (res.body.isNotEmpty) {
       try {
-        parsed = jsonDecode(bodyStr) as Map<String, dynamic>;
+        parsed = jsonDecode(res.body) as Map<String, dynamic>;
       } catch (_) {}
     }
 
@@ -194,17 +187,12 @@ class PostgresApiService {
 
   // Helper HTTP GET
   Future<Map<String, dynamic>> _getJson(Uri uri) async {
-    final client = HttpClient();
-    client.connectionTimeout = const Duration(seconds: 4);
-    final req = await client.getUrl(uri);
-    final res = await req.close();
-    final bodyStr = await utf8.decoder.bind(res).join();
-    client.close();
+    final res = await http.get(uri).timeout(const Duration(seconds: 4));
 
     Map<String, dynamic> parsed = {};
-    if (bodyStr.isNotEmpty) {
+    if (res.body.isNotEmpty) {
       try {
-        parsed = jsonDecode(bodyStr) as Map<String, dynamic>;
+        parsed = jsonDecode(res.body) as Map<String, dynamic>;
       } catch (_) {}
     }
 

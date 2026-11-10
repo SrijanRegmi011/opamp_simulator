@@ -55,6 +55,11 @@ jobs:
           cp build/app/outputs/flutter-apk/app-arm64-v8a-release.apk build/app/outputs/flutter-apk/OpAmp-VirtualLab-ARM64.apk
           cp build/app/outputs/flutter-apk/OpAmp-VirtualLab-Universal.apk build/app/outputs/flutter-apk/app-release.apk
 
+      - name: Build Flutter Web Release
+        run: |
+          flutter build web --release
+          cd build && zip -r opamp-web-bundle.zip web && mv opamp-web-bundle.zip ../
+
       - name: Upload APK as Workflow Artifact
         uses: actions/upload-artifact@v4
         with:
@@ -62,7 +67,14 @@ jobs:
           path: build/app/outputs/flutter-apk/*.apk
           if-no-files-found: error
 
-      - name: Publish GitHub Release with APK
+      - name: Upload Web Build Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: opamp-virtual-lab-web-build
+          path: build/web
+          if-no-files-found: error
+
+      - name: Publish GitHub Release with APK and Web Bundle
         uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/') || github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'
         env:
@@ -78,6 +90,7 @@ jobs:
             build/app/outputs/flutter-apk/app-release.apk
             build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
             build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk
+            opamp-web-bundle.zip
           body: |
             ## 📱 Virtual Laboratory: Operational Amplifier Simulator (Android Mobile APK v1.0.1)
 

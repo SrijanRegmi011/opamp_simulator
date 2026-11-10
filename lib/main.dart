@@ -2116,7 +2116,16 @@ class _LabReportGeneratorViewState extends State<LabReportGeneratorView> {
                           child: TextField(
                             controller: _nameCtrl,
                             decoration: const InputDecoration(labelText: 'Student Name', isDense: true, border: OutlineInputBorder()),
-                            onChanged: (v) => ctrl.reportData.studentName = v,
+                            onChanged: (v) {
+                              ctrl.reportData.studentName = v;
+                              PostgresApiService().syncStudent(
+                                rollNo: ctrl.reportData.rollNo,
+                                name: v,
+                                branch: ctrl.reportData.branch,
+                                college: ctrl.reportData.college,
+                                batch: ctrl.reportData.batch,
+                              );
+                            },
                           ),
                         ),
                         const SizedBox(width: 14),
@@ -2124,7 +2133,16 @@ class _LabReportGeneratorViewState extends State<LabReportGeneratorView> {
                           child: TextField(
                             controller: _rollCtrl,
                             decoration: const InputDecoration(labelText: 'Roll Number / Registration No.', isDense: true, border: OutlineInputBorder()),
-                            onChanged: (v) => ctrl.reportData.rollNo = v,
+                            onChanged: (v) {
+                              ctrl.reportData.rollNo = v;
+                              PostgresApiService().syncStudent(
+                                rollNo: v,
+                                name: ctrl.reportData.studentName,
+                                branch: ctrl.reportData.branch,
+                                college: ctrl.reportData.college,
+                                batch: ctrl.reportData.batch,
+                              );
+                            },
                           ),
                         ),
                       ],
@@ -2148,6 +2166,37 @@ class _LabReportGeneratorViewState extends State<LabReportGeneratorView> {
                           ),
                         ),
                       ],
+                    ),
+                    const SizedBox(height: 14),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: ElevatedButton.icon(
+                        icon: const Icon(Icons.cloud_sync, size: 16),
+                        label: const Text('Save & Update Student in Database'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFF1E40AF),
+                          foregroundColor: Colors.white,
+                        ),
+                        onPressed: () async {
+                          final ok = await PostgresApiService().syncStudent(
+                            rollNo: ctrl.reportData.rollNo,
+                            name: ctrl.reportData.studentName,
+                            branch: ctrl.reportData.branch,
+                            college: ctrl.reportData.college,
+                            batch: ctrl.reportData.batch,
+                          );
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(ok
+                                    ? 'Student "${ctrl.reportData.studentName}" (${ctrl.reportData.rollNo}) successfully updated in PostgreSQL!'
+                                    : 'Failed to update student in database. Check backend status.'),
+                                backgroundColor: ok ? const Color(0xFF15803D) : const Color(0xFFDC2626),
+                              ),
+                            );
+                          }
+                        },
+                      ),
                     ),
                   ],
                 ),
@@ -2583,11 +2632,14 @@ class _SimulationViewState extends State<SimulationView> {
                 icon: const Icon(Icons.add_chart, size: 15),
                 label: const Text('Add to table'),
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF15803D), foregroundColor: Colors.white, elevation: 0),
-                onPressed: ctrl.isCircuitConnected ? () {
+                onPressed: () async {
+                  if (!ctrl.isCircuitConnected) {
+                    ctrl.autoWireCircuit();
+                  }
                   ctrl.addReadingToTable();
                   if (ctrl.readings.isNotEmpty) {
                     final r = ctrl.readings.last;
-                    PostgresApiService().saveReading(
+                    final ok = await PostgresApiService().saveReading(
                       studentRollNo: ctrl.reportData.rollNo,
                       serialNo: r.serialNo,
                       mode: ctrl.mode.name,
@@ -2600,8 +2652,19 @@ class _SimulationViewState extends State<SimulationView> {
                       errorPercent: r.errorPercent,
                       isSaturated: r.isSaturated,
                     );
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text(ok
+                              ? 'Reading #${r.serialNo} saved to PostgreSQL! (Vin: ${r.vin}V, Vo: ${r.measuredVout.toStringAsFixed(2)}V)'
+                              : 'Saved locally (PostgreSQL backend offline)'),
+                          backgroundColor: ok ? const Color(0xFF15803D) : const Color(0xFF1E40AF),
+                          duration: const Duration(seconds: 2),
+                        ),
+                      );
+                    }
                   }
-                } : null,
+                },
               ),
               OutlinedButton.icon(
                 icon: const Icon(Icons.exposure_plus_2, size: 15),
