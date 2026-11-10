@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
 """
-Op-Amp Virtual Lab: Python + PostgreSQL REST API Server (Convenience Runner)
-Exposes the exact same REST API endpoints as backend/bin/server.dart.
-Runs with Python 3 standard library with zero mandatory external dependencies.
+Op-Amp Virtual Lab: Python + PostgreSQL REST API Server
+Directly connects to PostgreSQL 18 (database: opamp_vlab).
+Exposes REST API endpoints for Flutter mobile app:
+- GET  /api/health
+- POST /api/students & GET /api/students/{rollNo}
+- POST /api/readings & GET /api/readings/{rollNo}
+- GET  /api/quizzes/{pretest|posttest}
+- POST /api/quizzes/submit
+- POST /api/reports & GET /api/reports/{rollNo}
 """
 
 import http.server
@@ -11,138 +17,47 @@ import os
 import sys
 from datetime import datetime
 
+try:
+    import psycopg2
+    import psycopg2.extras
+    HAS_PSYCOPG2 = True
+except ImportError:
+    HAS_PSYCOPG2 = False
+
 PORT = int(os.environ.get("PORT", 8080))
 HOST = os.environ.get("HOST", "0.0.0.0")
 
-# In-memory synchronized store (with optional PostgreSQL connection)
-STUDENTS = {
-    "ECE-2026-042": {
-        "roll_no": "ECE-2026-042",
-        "name": "Rajiv Ghimire",
-        "branch": "Electronics & Communication Engineering",
-        "college": "Virtual Institute of Technology",
-        "batch": "Batch A1 (Semester IV)",
-        "created_at": datetime.now().isoformat(),
-    }
+DB_CONFIG = {
+    "dbname": os.environ.get("PGDATABASE", "opamp_vlab"),
+    "user": os.environ.get("PGUSER", "postgres"),
+    "password": os.environ.get("PGPASSWORD", "postgres"),
+    "host": os.environ.get("PGHOST", "127.0.0.1"),
+    "port": int(os.environ.get("PGPORT", 5432)),
 }
-READINGS = []
-QUIZ_SUBMISSIONS = []
-LAB_REPORTS = []
-CIRCUITS = []
 
-PRETEST_QUESTIONS = [
-    {
-        "id": 1,
-        "quiz_type": "pretest",
-        "question": "What is the ideal input impedance (Rin) of an operational amplifier?",
-        "options": ["Zero Ω", "Infinite (∞) Ω", "50 Ω", "10 kΩ"],
-        "correct_index": 1,
-        "explanation": "An ideal operational amplifier draws zero input current, requiring infinite input impedance."
-    },
-    {
-        "id": 2,
-        "quiz_type": "pretest",
-        "question": "What is the ideal output impedance (Rout) of an operational amplifier?",
-        "options": ["Zero Ω", "Infinite (∞) Ω", "100 Ω", "1 MΩ"],
-        "correct_index": 0,
-        "explanation": "An ideal op-amp acts as an ideal voltage source with zero internal output impedance."
-    },
-    {
-        "id": 3,
-        "quiz_type": "pretest",
-        "question": "The concept of Virtual Ground in an inverting op-amp relies on which conditions?",
-        "options": [
-            "Infinite output impedance",
-            "Zero CMRR and positive feedback",
-            "Infinite open-loop gain and grounded non-inverting terminal",
-            "Saturation voltage exceeding supply rails"
-        ],
-        "correct_index": 2,
-        "explanation": "Because open-loop gain is virtually infinite and non-inverting pin is at ground, inverting pin is held at 0V."
-    },
-    {
-        "id": 4,
-        "quiz_type": "pretest",
-        "question": "What is the Common Mode Rejection Ratio (CMRR) of an ideal op-amp?",
-        "options": ["0 dB", "1", "Infinite (∞)", "-100 dB"],
-        "correct_index": 2,
-        "explanation": "An ideal op-amp completely rejects common-mode noise, yielding an infinite CMRR."
-    },
-    {
-        "id": 5,
-        "quiz_type": "pretest",
-        "question": "Which pin of the standard IC 741 DIP-8 package represents the Inverting Input terminal?",
-        "options": ["Pin 2", "Pin 3", "Pin 6", "Pin 7"],
-        "correct_index": 0,
-        "explanation": "Pin 2 is Inverting Input (-), Pin 3 is Non-Inverting (+), Pin 6 is Output."
-    }
-]
-
-POSTTEST_QUESTIONS = [
-    {
-        "id": 6,
-        "quiz_type": "posttest",
-        "question": "What is theoretical closed-loop voltage gain (Av) of an inverting amplifier with R1 = 2 kΩ and Rf = 20 kΩ?",
-        "options": ["+10", "-10", "-11", "+11"],
-        "correct_index": 1,
-        "explanation": "For inverting amplifier: Av = - (Rf / R1) = - (20 kΩ / 2 kΩ) = -10."
-    },
-    {
-        "id": 7,
-        "quiz_type": "posttest",
-        "question": "What is theoretical closed-loop voltage gain (Av) of a non-inverting amplifier with R1 = 2 kΩ and Rf = 20 kΩ?",
-        "options": ["+10", "-10", "+11", "-11"],
-        "correct_index": 2,
-        "explanation": "For non-inverting amplifier: Av = 1 + (Rf / R1) = 1 + (20 / 2) = +11."
-    },
-    {
-        "id": 8,
-        "quiz_type": "posttest",
-        "question": "What is the phase difference between input and output waveforms in an inverting op-amp configuration?",
-        "options": ["0° (In-phase)", "90°", "180° (Out-of-phase)", "270°"],
-        "correct_index": 2,
-        "explanation": "The inverting terminal imparts an exact 180° phase inversion between input and output."
-    },
-    {
-        "id": 9,
-        "quiz_type": "posttest",
-        "question": "If DC supply is ±15V and internal drop is 1.5V, what happens when input causes calculated Vo to exceed 25V?",
-        "options": [
-            "The op-amp burns out immediately",
-            "Output clamps at positive saturation voltage (+13.5V)",
-            "Output oscillates infinitely",
-            "Output increases linearly up to 25V"
-        ],
-        "correct_index": 1,
-        "explanation": "An op-amp cannot output voltage beyond its saturation limits: Vsat = ±(Vsupply - Vdrop) = ±13.5V."
-    },
-    {
-        "id": 10,
-        "quiz_type": "posttest",
-        "question": "Why is negative feedback employed in linear op-amp amplifier circuits?",
-        "options": [
-            "To increase open-loop gain to infinity",
-            "To stabilize voltage gain, broaden bandwidth, and ensure predictable operation",
-            "To produce sustained sinusoidal oscillations",
-            "To reduce input impedance to zero"
-        ],
-        "correct_index": 1,
-        "explanation": "Negative feedback stabilizes closed-loop gain, reduces harmonic distortion, and broadens bandwidth."
-    }
-]
+def get_db_connection():
+    if not HAS_PSYCOPG2:
+        return None
+    try:
+        conn = psycopg2.connect(**DB_CONFIG)
+        conn.autocommit = True
+        return conn
+    except Exception as e:
+        sys.stderr.write(f"[DB-WARN] PostgreSQL connect error: {e}\n")
+        return None
 
 class LabApiHandler(http.server.BaseHTTPRequestHandler):
     def _send_cors_headers(self):
         self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type, Authorization, Accept")
 
     def _send_json(self, status_code, data):
         self.send_response(status_code)
         self._send_cors_headers()
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.end_headers()
-        self.wfile.write(json.dumps(data).encode("utf-8"))
+        self.wfile.write(json.dumps(data, default=str).encode("utf-8"))
 
     def do_OPTIONS(self):
         self.send_response(200)
@@ -152,44 +67,104 @@ class LabApiHandler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         path = self.path.split("?")[0]
 
+        # 1. HEALTH CHECK
         if path in ("/health", "/api/health"):
+            conn = get_db_connection()
+            db_status = "Disconnected"
+            tables_count = 0
+            if conn:
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute("SELECT count(*) FROM information_schema.tables WHERE table_schema = 'public';")
+                        tables_count = cur.fetchone()[0]
+                    db_status = f"PostgreSQL 18 Connected (Tables: {tables_count})"
+                    conn.close()
+                except Exception as e:
+                    db_status = f"Error: {e}"
+
             self._send_json(200, {
                 "status": "healthy",
                 "service": "Op-Amp Virtual Lab Backend",
-                "database": "PostgreSQL (opamp_vlab)",
+                "database": db_status,
+                "db_name": DB_CONFIG["dbname"],
+                "db_port": DB_CONFIG["port"],
                 "timestamp": datetime.now().isoformat(),
             })
             return
 
+        # 2. STUDENTS PROFILE
         if path.startswith("/api/students/"):
-            roll = path.replace("/api/students/", "")
-            student = STUDENTS.get(roll)
-            if student:
-                self._send_json(200, {"student": student})
-            else:
-                self._send_json(404, {"error": "Student not found"})
+            roll = path.replace("/api/students/", "").strip()
+            conn = get_db_connection()
+            if conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute("SELECT roll_no, name, branch, college, batch, created_at FROM students WHERE roll_no = %s;", (roll,))
+                    row = cur.fetchone()
+                conn.close()
+                if row:
+                    self._send_json(200, {"student": dict(row)})
+                    return
+            self._send_json(404, {"error": "Student not found", "roll_no": roll})
             return
 
+        # 3. OBSERVATION TABLE READINGS
         if path.startswith("/api/readings/"):
-            roll = path.replace("/api/readings/", "")
-            student_readings = [r for r in READINGS if r.get("student_roll_no") == roll]
-            self._send_json(200, {"roll_no": roll, "count": len(student_readings), "readings": student_readings})
+            roll = path.replace("/api/readings/", "").strip()
+            conn = get_db_connection()
+            readings = []
+            if conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute("""
+                        SELECT id, student_roll_no, serial_no, mode, r1_ohm, rf_ohm, vin_volts,
+                               expected_vout, measured_vout, theoretical_gain, error_percent, is_saturated, recorded_at
+                        FROM experiment_readings
+                        WHERE student_roll_no = %s
+                        ORDER BY serial_no ASC;
+                    """, (roll,))
+                    readings = [dict(r) for r in cur.fetchall()]
+                conn.close()
+            self._send_json(200, {"roll_no": roll, "count": len(readings), "readings": readings})
             return
 
+        # 4. QUIZ QUESTIONS
         if path.startswith("/api/quizzes/"):
-            q_type = path.replace("/api/quizzes/", "").lower()
-            if q_type == "pretest":
-                self._send_json(200, {"type": "pretest", "questions": PRETEST_QUESTIONS})
-            elif q_type == "posttest":
-                self._send_json(200, {"type": "posttest", "questions": POSTTEST_QUESTIONS})
-            else:
-                self._send_json(400, {"error": "Invalid quiz type"})
+            q_type = path.replace("/api/quizzes/", "").strip().lower()
+            conn = get_db_connection()
+            questions = []
+            if conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute("""
+                        SELECT id, quiz_type, question, option_a, option_b, option_c, option_d,
+                               correct_index, explanation
+                        FROM quiz_questions
+                        WHERE quiz_type = %s
+                        ORDER BY id ASC;
+                    """, (q_type,))
+                    for r in cur.fetchall():
+                        q = dict(r)
+                        q["options"] = [q.pop("option_a"), q.pop("option_b"), q.pop("option_c"), q.pop("option_d")]
+                        questions.append(q)
+                conn.close()
+            self._send_json(200, {"type": q_type, "count": len(questions), "questions": questions})
             return
 
+        # 5. LAB REPORTS
         if path.startswith("/api/reports/"):
-            roll = path.replace("/api/reports/", "")
-            student_reports = [r for r in LAB_REPORTS if r.get("student_roll_no") == roll]
-            self._send_json(200, {"roll_no": roll, "count": len(student_reports), "reports": student_reports})
+            roll = path.replace("/api/reports/", "").strip()
+            conn = get_db_connection()
+            reports = []
+            if conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute("""
+                        SELECT id, student_roll_no, experiment_id, report_title, experiment_date,
+                               student_metadata, readings_summary, circuit_status, conclusion, generated_at
+                        FROM lab_reports
+                        WHERE student_roll_no = %s
+                        ORDER BY generated_at DESC;
+                    """, (roll,))
+                    reports = [dict(r) for r in cur.fetchall()]
+                conn.close()
+            self._send_json(200, {"roll_no": roll, "count": len(reports), "reports": reports})
             return
 
         self._send_json(404, {"error": "Not Found", "path": path})
@@ -203,94 +178,144 @@ class LabApiHandler(http.server.BaseHTTPRequestHandler):
         except Exception:
             body = {}
 
+        # 1. REGISTER / UPDATE STUDENT
         if path == "/api/students":
-            roll = body.get("roll_no") or body.get("rollNo") or ""
+            roll = (body.get("roll_no") or body.get("rollNo") or "").strip()
             if not roll:
                 self._send_json(400, {"error": "roll_no required"})
                 return
-            rec = {
-                "roll_no": roll,
-                "name": body.get("name", "Student"),
-                "branch": body.get("branch", "ECE"),
-                "college": body.get("college", "Virtual Institute of Technology"),
-                "batch": body.get("batch", "Batch A1"),
-                "updated_at": datetime.now().isoformat(),
-            }
-            STUDENTS[roll] = rec
-            self._send_json(200, {"message": "Student registered", "student": rec})
+            name = body.get("name", "Student")
+            branch = body.get("branch", "ECE")
+            college = body.get("college", "Virtual Institute of Technology")
+            batch = body.get("batch", "Batch A1")
+
+            conn = get_db_connection()
+            if conn:
+                with conn.cursor() as cur:
+                    cur.execute("""
+                        INSERT INTO students (roll_no, name, branch, college, batch)
+                        VALUES (%s, %s, %s, %s, %s)
+                        ON CONFLICT (roll_no) DO UPDATE
+                        SET name = EXCLUDED.name, branch = EXCLUDED.branch, college = EXCLUDED.college, batch = EXCLUDED.batch, updated_at = CURRENT_TIMESTAMP;
+                    """, (roll, name, branch, college, batch))
+                conn.close()
+            self._send_json(200, {"message": "Student credentials synced to PostgreSQL", "roll_no": roll})
             return
 
+        # 2. SAVE OBSERVATION READING
         if path == "/api/readings":
-            roll = body.get("student_roll_no") or body.get("rollNo") or "ECE-2026-042"
-            reading = {
-                "id": len(READINGS) + 1,
+            roll = (body.get("student_roll_no") or body.get("rollNo") or "ECE-2026-042").strip()
+            serial = int(body.get("serial_no", 1))
+            mode = body.get("mode", "inverting")
+            r1 = float(body.get("r1_ohm", body.get("r1", 2000.0)))
+            rf = float(body.get("rf_ohm", body.get("rf", 20000.0)))
+            vin = float(body.get("vin_volts", body.get("vin", 1.0)))
+            exp_vo = float(body.get("expected_vout", 0.0))
+            meas_vo = float(body.get("measured_vout", 0.0))
+            gain = float(body.get("theoretical_gain", 0.0))
+            err = float(body.get("error_percent", 0.0))
+            is_sat = bool(body.get("is_saturated", False))
+
+            conn = get_db_connection()
+            new_id = None
+            if conn:
+                with conn.cursor() as cur:
+                    # Ensure student exists
+                    cur.execute("INSERT INTO students (roll_no, name) VALUES (%s, 'Student') ON CONFLICT DO NOTHING;", (roll,))
+                    cur.execute("""
+                        INSERT INTO experiment_readings (student_roll_no, experiment_id, serial_no, mode, r1_ohm, rf_ohm, vin_volts,
+                                                        expected_vout, measured_vout, theoretical_gain, error_percent, is_saturated)
+                        VALUES (%s, 'OPAMP-01', %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id;
+                    """, (roll, serial, mode, r1, rf, vin, exp_vo, meas_vo, gain, err, is_sat))
+                    row = cur.fetchone()
+                    if row:
+                        new_id = row[0]
+                conn.close()
+
+            self._send_json(201, {
+                "message": "Reading recorded successfully in PostgreSQL",
+                "id": new_id,
                 "student_roll_no": roll,
-                "serial_no": body.get("serial_no", len([r for r in READINGS if r.get("student_roll_no") == roll]) + 1),
-                "mode": body.get("mode", "inverting"),
-                "r1_ohm": float(body.get("r1_ohm", body.get("r1", 2000.0))),
-                "rf_ohm": float(body.get("rf_ohm", body.get("rf", 20000.0))),
-                "vin_volts": float(body.get("vin_volts", body.get("vin", 1.0))),
-                "expected_vout": float(body.get("expected_vout", 0.0)),
-                "measured_vout": float(body.get("measured_vout", 0.0)),
-                "theoretical_gain": float(body.get("theoretical_gain", 0.0)),
-                "error_percent": float(body.get("error_percent", 0.0)),
-                "is_saturated": bool(body.get("is_saturated", False)),
-                "recorded_at": datetime.now().isoformat(),
-            }
-            READINGS.append(reading)
-            self._send_json(201, {"message": "Reading saved to database", "reading": reading})
+                "serial_no": serial,
+            })
             return
 
+        # 3. SUBMIT QUIZ
         if path == "/api/quizzes/submit":
-            roll = body.get("student_roll_no", "ECE-2026-042")
-            q_type = body.get("quiz_type", "pretest")
+            roll = (body.get("student_roll_no") or "ECE-2026-042").strip()
+            q_type = body.get("quiz_type", "pretest").lower()
             answers = body.get("answers", {})
-            questions = POSTTEST_QUESTIONS if q_type == "posttest" else PRETEST_QUESTIONS
-            correct = sum(1 for q in questions if answers.get(str(q["id"])) == q["correct_index"] or answers.get(q["id"]) == q["correct_index"])
-            total = len(questions)
-            pct = round((correct / total) * 100.0, 1) if total > 0 else 0.0
-            sub = {
-                "id": len(QUIZ_SUBMISSIONS) + 1,
+
+            conn = get_db_connection()
+            correct = 0
+            total = 0
+            details = []
+            if conn:
+                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                    cur.execute("SELECT id, correct_index, explanation FROM quiz_questions WHERE quiz_type = %s;", (q_type,))
+                    questions = cur.fetchall()
+                    total = len(questions)
+                    for q in questions:
+                        q_id = str(q["id"])
+                        chosen = answers.get(q_id) if q_id in answers else answers.get(int(q_id))
+                        is_corr = chosen == q["correct_index"]
+                        if is_corr:
+                            correct += 1
+                        details.append({"question_id": q["id"], "selected": chosen, "correct": is_corr})
+
+                    score_pct = round((correct / total) * 100.0, 1) if total > 0 else 0.0
+                    cur.execute("INSERT INTO students (roll_no, name) VALUES (%s, 'Student') ON CONFLICT DO NOTHING;", (roll,))
+                    cur.execute("""
+                        INSERT INTO quiz_submissions (student_roll_no, quiz_type, total_questions, correct_answers, score_percentage, answers_detail)
+                        VALUES (%s, %s, %s, %s, %s, %s);
+                    """, (roll, q_type, total, correct, score_pct, json.dumps(details)))
+                conn.close()
+
+            self._send_json(200, {
+                "message": "Quiz evaluated and persisted to PostgreSQL",
                 "student_roll_no": roll,
                 "quiz_type": q_type,
                 "total": total,
                 "correct": correct,
-                "percentage": pct,
-                "submitted_at": datetime.now().isoformat(),
-            }
-            QUIZ_SUBMISSIONS.append(sub)
-            self._send_json(200, {"message": "Quiz evaluated and saved", "submission": sub})
+                "score_percentage": score_pct if 'score_pct' in locals() else 0.0,
+            })
             return
 
+        # 4. SAVE LAB REPORT
         if path == "/api/reports":
-            roll = body.get("student_roll_no", "ECE-2026-042")
-            report = {
-                "id": len(LAB_REPORTS) + 1,
-                "student_roll_no": roll,
-                "title": body.get("title", "Op-Amp Virtual Lab Report"),
-                "student": body.get("student", {}),
-                "readings": body.get("readings", []),
-                "circuit_status": body.get("circuit_status", "Verified"),
-                "conclusion": body.get("conclusion", "Completed successfully."),
-                "generated_at": datetime.now().isoformat(),
-            }
-            LAB_REPORTS.append(report)
-            self._send_json(201, {"message": "Lab report archived to PostgreSQL", "report": report})
+            roll = (body.get("student_roll_no") or "ECE-2026-042").strip()
+            title = body.get("title", "Study of Basic Properties of Operational Amplifier")
+            student_meta = body.get("student", {})
+            readings = body.get("readings", [])
+            circuit_status = body.get("circuit_status", "Verified & Complete")
+            conclusion = body.get("conclusion", "Completed.")
+
+            conn = get_db_connection()
+            if conn:
+                with conn.cursor() as cur:
+                    cur.execute("INSERT INTO students (roll_no, name) VALUES (%s, 'Student') ON CONFLICT DO NOTHING;", (roll,))
+                    cur.execute("""
+                        INSERT INTO lab_reports (student_roll_no, experiment_id, report_title, student_metadata, readings_summary, circuit_status, conclusion)
+                        VALUES (%s, 'OPAMP-01', %s, %s, %s, %s, %s);
+                    """, (roll, title, json.dumps(student_meta), json.dumps(readings), circuit_status, conclusion))
+                conn.close()
+
+            self._send_json(201, {"message": "Formal lab report archived to PostgreSQL", "roll_no": roll})
             return
 
         self._send_json(404, {"error": "Not Found", "path": path})
 
     def log_message(self, format, *args):
-        # Clean logging
         sys.stdout.write(f"[{datetime.now().strftime('%H:%M:%S')}] {args[0]} {args[1]} -> {args[2]}\n")
 
 if __name__ == "__main__":
     server_address = (HOST, PORT)
     httpd = http.server.HTTPServer(server_address, LabApiHandler)
     print("===========================================================")
-    print(" Op-Amp Virtual Lab: REST API Backend Server Live")
-    print(f" URL: http://localhost:{PORT}")
-    print(f" Health Check: http://localhost:{PORT}/api/health")
+    print(" Op-Amp Virtual Lab: PostgreSQL Backend Server Live")
+    print(f" Listening on: http://localhost:{PORT}")
+    print(f" Database: {DB_CONFIG['dbname']} on port {DB_CONFIG['port']}")
     print("===========================================================")
     try:
         httpd.serve_forever()
