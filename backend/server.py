@@ -307,16 +307,18 @@ class LabApiHandler(http.server.BaseHTTPRequestHandler):
         self._send_json(404, {"error": "Not Found", "path": path})
 
     def log_message(self, format, *args):
-        sys.stdout.write(f"[{datetime.now().strftime('%H:%M:%S')}] {args[0]} {args[1]} -> {args[2]}\n")
+        if sys.stdout:
+            sys.stdout.write(f"[{datetime.now().strftime('%H:%M:%S')}] {args[0]} {args[1]} -> {args[2]}\n")
 
 if __name__ == "__main__":
     server_address = (HOST, PORT)
     httpd = http.server.HTTPServer(server_address, LabApiHandler)
-    print("===========================================================")
-    print(" Op-Amp Virtual Lab: PostgreSQL Backend Server Live")
-    print(f" Listening on: http://localhost:{PORT}")
-    print(f" Database: {DB_CONFIG['dbname']} on port {DB_CONFIG['port']}")
-    print("===========================================================")
+    if sys.stdout:
+        print("===========================================================")
+        print(" Op-Amp Virtual Lab: PostgreSQL Backend Server Live")
+        print(f" Listening on: http://localhost:{PORT}")
+        print(f" Database: {DB_CONFIG['dbname']} on port {DB_CONFIG['port']}")
+        print("===========================================================")
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
