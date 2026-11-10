@@ -3,8 +3,6 @@
 /local.properties
 GeneratedPluginRegistrant.java
 
-# Remember to never publicly share your keystore.
-# See https://flutter.dev/to/reference-keystore
+# Keystore configuration
 key.properties
-**/*.keystore
-**/*.jks
+# release.jks is committed for automated GitHub Actions CI/CD release signing

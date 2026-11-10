@@ -24,11 +24,25 @@ android {
         targetSdk = 34
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        multiDexEnabled = true
+    }
+
+    signingConfigs {
+        release {
+            keyAlias 'opamp_key'
+            keyPassword 'opamp123456'
+            storeFile file('release.jks')
+            storePassword 'opamp123456'
+            v1SigningEnabled true
+            v2SigningEnabled true
+        }
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.debug
+            signingConfig = signingConfigs.release
+            minifyEnabled = false
+            shrinkResources = false
         }
     }
 }
