@@ -1,14 +1,15 @@
 @echo off
+title Op-Amp Virtual Lab Backend Server
 echo ===============================================================
-echo     Op-Amp Virtual Lab: Starting REST API Backend Server
+echo     Op-Amp Virtual Lab: PostgreSQL Backend Server Live
 echo ===============================================================
-
-where dart >nul 2>nul
-if %ERRORLEVEL% EQU 0 (
-    echo [INFO] Dart detected. Launching Dart backend server...
-    dart run backend/bin/server.dart
-) else (
-    echo [INFO] Launching Python backend server...
-    python backend/server.py
-)
+echo.
+echo  [DATABASE] PostgreSQL 18 (opamp_vlab on port 5432)
+echo  [PC URL]   http://localhost:8080
+echo  [PHONE IP] http://192.168.0.100:8080
+echo.
+echo  Keep this window open while using the mobile app or browser!
+echo ===============================================================
+echo.
+python backend/server.py
 pause
