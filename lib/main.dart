@@ -2874,40 +2874,42 @@ class _LabPortalShellState extends State<LabPortalShell> {
   }
 
   Widget _buildDesktopSidebar(bool isDark) {
-    return Container(
-      width: 240,
-      decoration: BoxDecoration(
-        color: isDark ? const Color(0xFF1E293B) : Colors.white,
-        border: Border(right: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0))),
-      ),
-      child: ListView.separated(
-        itemCount: _navItems.length,
-        separatorBuilder: (_, __) => Divider(height: 1, color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
-        itemBuilder: (context, idx) {
-          final item = _navItems[idx];
-          final isSelected = _activeNavIndex == idx;
+    return Material(
+      color: isDark ? const Color(0xFF1E293B) : Colors.white,
+      child: Container(
+        width: 240,
+        decoration: BoxDecoration(
+          border: Border(right: BorderSide(color: isDark ? const Color(0xFF334155) : const Color(0xFFE2E8F0))),
+        ),
+        child: ListView.separated(
+          itemCount: _navItems.length,
+          separatorBuilder: (_, __) => Divider(height: 1, color: isDark ? const Color(0xFF334155) : const Color(0xFFF1F5F9)),
+          itemBuilder: (context, idx) {
+            final item = _navItems[idx];
+            final isSelected = _activeNavIndex == idx;
 
-          return ListTile(
-            dense: true,
-            selected: isSelected,
-            selectedTileColor: isDark ? const Color(0xFF334155) : const Color(0xFFFFF7ED),
-            leading: Icon(
-              item['icon'] as IconData,
-              size: 18,
-              color: isSelected ? const Color(0xFFD9531E) : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
-            ),
-            title: Text(
-              item['title'] as String,
-              style: TextStyle(
-                fontSize: 12.5,
-                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
-                color: isSelected ? const Color(0xFFD9531E) : (isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155)),
+            return ListTile(
+              dense: true,
+              selected: isSelected,
+              selectedTileColor: isDark ? const Color(0xFF334155) : const Color(0xFFFFF7ED),
+              leading: Icon(
+                item['icon'] as IconData,
+                size: 18,
+                color: isSelected ? const Color(0xFFD9531E) : (isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B)),
               ),
-            ),
-            trailing: isSelected ? Container(width: 3, height: 18, color: const Color(0xFFD9531E)) : null,
-            onTap: () => setState(() => _activeNavIndex = idx),
-          );
-        },
+              title: Text(
+                item['title'] as String,
+                style: TextStyle(
+                  fontSize: 12.5,
+                  fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                  color: isSelected ? const Color(0xFFD9531E) : (isDark ? const Color(0xFFE2E8F0) : const Color(0xFF334155)),
+                ),
+              ),
+              trailing: isSelected ? Container(width: 3, height: 18, color: const Color(0xFFD9531E)) : null,
+              onTap: () => setState(() => _activeNavIndex = idx),
+            );
+          },
+        ),
       ),
     );
   }
