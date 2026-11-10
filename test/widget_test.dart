@@ -4,7 +4,7 @@ import 'package:opamp_simulator/main.dart';
 void main() {
   testWidgets('Virtual lab app smoke test renders title', (WidgetTester tester) async {
     await tester.pumpWidget(const OpAmpSimulatorApp());
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.textContaining('Operational Amplifier'), findsWidgets);
   });
