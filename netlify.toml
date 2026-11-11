@@ -1,0 +1,38 @@
+# =============================================================================
+# NETLIFY PRODUCTION DEPLOYMENT CONFIGURATION
+# Project: Op-Amp Virtual Lab Simulator (Inverting & Non-Inverting Amplifiers)
+# =============================================================================
+
+[build]
+  publish = "build/web"
+  command = "if [ ! -d \"_flutter\" ]; then git clone https://github.com/flutter/flutter.git --depth 1 -b 3.24.5 _flutter; fi && export PATH=\"$PATH:$(pwd)/_flutter/bin\" && flutter pub get && flutter build web --release"
+
+[build.environment]
+  FLUTTER_CHANNEL = "stable"
+  FLUTTER_VERSION = "3.24.5"
+
+# Single-Page Application (SPA) routing: redirect all paths to index.html
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Optimize CORS and security headers
+[[headers]]
+  for = "/*"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    X-Frame-Options = "SAMEORIGIN"
+    X-Content-Type-Options = "nosniff"
+    Cross-Origin-Opener-Policy = "same-origin"
+    Cross-Origin-Embedder-Policy = "credentialless"
+
+[[headers]]
+  for = "/*.wasm"
+  [headers.values]
+    Content-Type = "application/wasm"
+
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Content-Type = "application/javascript"
